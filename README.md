@@ -33,3 +33,8 @@ flutter build apk --release
 
 ## GitHub Actions
 يوجد سير عمل في `.github/workflows/android.yml` ينشئ هيكل Android القياسي ثم يبني APK عند كل push.
+
+
+## إصلاح توافق Android WebView
+
+يحتوي سير عمل GitHub Actions على خطوة توافق تصلح تلقائياً اسم ملف ProGuard القديم داخل نسخة `flutter_inappwebview_android` التي ينزلها Pub. هذه الخطوة تعالج خطأ Gradle الذي يظهر عند استخدام `proguard-android.txt` مع إصدارات Android Gradle Plugin الحديثة.
