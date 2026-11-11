@@ -16,6 +16,25 @@ jobs:
           cache: true
       - name: Generate Android platform files
         run: flutter create . --platforms=android
+      - name: Install Android API 36
+        run: yes | sdkmanager --licenses >/dev/null && sdkmanager "platforms;android-36"
+      - name: Align all Android modules to compileSdk 36
+        shell: bash
+        run: |
+          cat >> android/build.gradle <<'GRADLE'
+
+          // Keep app and Flutter plugin modules on the same Android API level.
+          subprojects { project ->
+              afterEvaluate {
+                  if (project.hasProperty("android")) {
+                      project.android {
+                          compileSdkVersion 36
+                      }
+                  }
+              }
+          }
+          GRADLE
+          echo "Configured Android subprojects to compile against API 36"
       - name: Set app display name
         run: sed -i 's/android:label="aljesi_browser"/android:label="الجيسي"/' android/app/src/main/AndroidManifest.xml
       - name: Install packages
