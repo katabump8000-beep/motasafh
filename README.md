@@ -38,3 +38,8 @@ flutter build apk --release
 ## إصلاح توافق Android WebView
 
 يحتوي سير عمل GitHub Actions على خطوة توافق تصلح تلقائياً اسم ملف ProGuard القديم داخل نسخة `flutter_inappwebview_android` التي ينزلها Pub. هذه الخطوة تعالج خطأ Gradle الذي يظهر عند استخدام `proguard-android.txt` مع إصدارات Android Gradle Plugin الحديثة.
+
+
+## إصلاح العثور على Android SDK Manager
+
+يحدد سير عمل GitHub Actions مسار `sdkmanager` مباشرةً داخل مجلد Android SDK بدلاً من افتراض أنه موجود في `PATH`. ثم يثبت Android API 36 قبل بناء التطبيق.
