@@ -20,6 +20,17 @@ jobs:
         run: sed -i 's/android:label="aljesi_browser"/android:label="الجيسي"/' android/app/src/main/AndroidManifest.xml
       - name: Install packages
         run: flutter pub get
+      - name: Fix legacy ProGuard setting in Android WebView plugin
+        shell: bash
+        run: |
+          PLUGIN_GRADLE="$(find "$HOME/.pub-cache/hosted/pub.dev" -path '*/flutter_inappwebview_android-*/android/build.gradle' -print -quit)"
+          if [ -z "$PLUGIN_GRADLE" ]; then
+            echo "flutter_inappwebview_android Gradle file was not found"
+            exit 1
+          fi
+          sed -i 's/proguard-android\.txt/proguard-android-optimize.txt/g' "$PLUGIN_GRADLE"
+          echo "Patched: $PLUGIN_GRADLE"
+          grep -n 'getDefaultProguardFile' "$PLUGIN_GRADLE" || true
       - name: Generate launcher icon
         run: dart run flutter_launcher_icons
       - name: Build release APK
