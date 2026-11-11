@@ -84,7 +84,8 @@ class _BrowserHomeState extends State<BrowserHome> with TickerProviderStateMixin
   String? customFolder;
   bool adBlock = true;
   bool desktop = false;
-  bool loading = true;
+  bool loading = false;
+  bool onStart = true;
   bool testingSpeed = false;
   int progress = 0;
   int speedScore = 0;
@@ -145,7 +146,18 @@ class _BrowserHomeState extends State<BrowserHome> with TickerProviderStateMixin
   Future<void> _go([String? text]) async {
     final target = _normalize(text ?? address.text);
     focus.unfocus();
+    if (mounted) setState(() => onStart = false);
     await web?.loadUrl(urlRequest: URLRequest(url: WebUri(target)));
+  }
+
+  void _goHome() {
+    focus.unfocus();
+    setState(() { onStart = true; loading = false; progress = 0; address.clear(); });
+  }
+
+  Future<void> _onBack() async {
+    if (onStart) { SystemNavigator.pop(); return; }
+    if (await web?.canGoBack() ?? false) { web?.goBack(); } else { _goHome(); }
   }
 
   Future<void> _saveBookmark() async {
@@ -295,7 +307,7 @@ class _BrowserHomeState extends State<BrowserHome> with TickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     final isBookmarked = stars.any((e) => e.url == currentUrl);
-    return Scaffold(
+    return PopScope(canPop: false, onPopInvokedWithResult: (didPop, _) { if (!didPop) _onBack(); }, child: Scaffold(
       body: Stack(children: [
         const Positioned.fill(child: Starfield()),
         SafeArea(child: Column(children: [
@@ -304,33 +316,46 @@ class _BrowserHomeState extends State<BrowserHome> with TickerProviderStateMixin
             const SizedBox(width: 8), _roundButton(Icons.more_vert, _menu), const SizedBox(width: 7), _roundButton(isBookmarked ? Icons.star : Icons.star_border, _saveBookmark, color: isBookmarked ? wineBright : Colors.white),
           ])),
           if (progress > 0 && progress < 100) LinearProgressIndicator(value: progress / 100, minHeight: 2, backgroundColor: Colors.transparent, color: wineBright),
-          Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(15), child: Container(margin: const EdgeInsets.fromLTRB(7, 0, 7, 5), decoration: BoxDecoration(color: const Color(0xFF08080C), border: Border.all(color: wine.withOpacity(.22)), borderRadius: BorderRadius.circular(15)), child: InAppWebView(
-            initialUrlRequest: URLRequest(url: WebUri('https://www.google.com')),
+          Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(15), child: Container(margin: const EdgeInsets.fromLTRB(7, 0, 7, 5), decoration: BoxDecoration(color: onStart ? Colors.transparent : const Color(0xFF08080C), border: Border.all(color: wine.withOpacity(.22)), borderRadius: BorderRadius.circular(15)), child: Stack(children: [Offstage(offstage: onStart, child: InAppWebView(
+            initialUrlRequest: URLRequest(url: WebUri('about:blank')),
             initialSettings: InAppWebViewSettings(javaScriptEnabled: true, domStorageEnabled: true, databaseEnabled: true, supportZoom: true, transparentBackground: true, useShouldOverrideUrlLoading: true, allowsBackForwardNavigationGestures: true, userAgent: desktop ? 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' : null),
             onWebViewCreated: (controller) { web = controller; controller.addJavaScriptHandler(handlerName: 'aljesiSaveField', callback: (args) { if (args.isNotEmpty) _saveField(args.first.toString()); return true; }); },
-            onLoadStart: (controller, url) { setState(() { loading = true; if (url != null) { currentUrl = url.toString(); address.text = currentUrl; } }); },
-            onLoadStop: (controller, url) async { setState(() { loading = false; progress = 100; if (url != null) { currentUrl = url.toString(); address.text = currentUrl; } }); pageTitle = await controller.getTitle() ?? currentUrl; await _injectSavedFields(); Future.delayed(const Duration(milliseconds: 700), () { if (mounted) setState(() => progress = 0); }); },
-            onProgressChanged: (_, p) => setState(() { progress = p; loading = p < 100; }),
+            onLoadStart: (controller, url) { if (url == null || url.toString() == 'about:blank') return; setState(() { loading = true; currentUrl = url.toString(); address.text = currentUrl; }); },
+            onLoadStop: (controller, url) async { if (url == null || url.toString() == 'about:blank') return; setState(() { loading = false; progress = 100; if (url != null) { currentUrl = url.toString(); address.text = currentUrl; } }); pageTitle = await controller.getTitle() ?? currentUrl; await _injectSavedFields(); Future.delayed(const Duration(milliseconds: 700), () { if (mounted) setState(() => progress = 0); }); },
+            onProgressChanged: (_, p) { if (onStart) return; setState(() { progress = p; loading = p < 100; }); },
             onTitleChanged: (_, title) { if (title != null) setState(() => pageTitle = title); },
             shouldOverrideUrlLoading: (controller, action) async { final url = action.request.url; if (url == null) return NavigationActionPolicy.ALLOW; if (adBlock && blockedHosts.any((h) => url.host.toLowerCase() == h || url.host.toLowerCase().endsWith('.$h'))) return NavigationActionPolicy.CANCEL; if (!['http', 'https', 'file', 'about', 'data'].contains(url.scheme)) { if (await canLaunchUrl(Uri.parse(url.toString()))) await launchUrl(Uri.parse(url.toString()), mode: LaunchMode.externalApplication); return NavigationActionPolicy.CANCEL; } return NavigationActionPolicy.ALLOW; },
             onDownloadStartRequest: (controller, request) { final uri = Uri.tryParse(request.url.toString()); if (uri != null) _download(uri, request.suggestedFilename); },
-          )))),
+          )), if (onStart) _startPage()])))),
           if (downloadStatus != null) Container(margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 3), padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9), decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(12), border: Border.all(color: wine.withOpacity(.5))), child: Column(children: [Row(children: [const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: wineBright)), const SizedBox(width: 10), Expanded(child: Text(downloadStatus!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12))), Text(downloadTotal > 0 ? '${(downloadReceived * 100 / downloadTotal).clamp(0, 100).round()}%' : '...', style: const TextStyle(color: wineBright, fontSize: 11))]), const SizedBox(height: 8), ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(value: downloadTotal > 0 ? (downloadReceived / downloadTotal).clamp(0, 1) : null, minHeight: 4, backgroundColor: Colors.white10, color: wineBright))])),
           Container(height: 60, margin: const EdgeInsets.fromLTRB(9, 2, 9, 8), padding: const EdgeInsets.symmetric(horizontal: 12), decoration: BoxDecoration(color: const Color(0xE6111116), borderRadius: BorderRadius.circular(19), border: Border.all(color: wine.withOpacity(.35))), child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-            _navButton(Icons.arrow_back_ios_new, () async { if (await web?.canGoBack() ?? false) web?.goBack(); }),
+            _navButton(Icons.arrow_back_ios_new, _onBack),
             _navButton(Icons.arrow_forward_ios, () async { if (await web?.canGoForward() ?? false) web?.goForward(); }),
-            _navButton(Icons.home_outlined, () => _go('https://www.google.com'), accent: true),
-            _navButton(Icons.refresh, () => web?.reload()),
+            _navButton(Icons.home_outlined, _goHome, accent: true),
+            _navButton(Icons.refresh, () { if (!onStart) web?.reload(); }),
             _navButton(Icons.tab, _showTabs),
           ])),
         ])),
       ]),
-    );
+    ));
+  }
+
+  Widget _startPage() {
+    final quick = <SavedSite>[const SavedSite('Google', 'https://www.google.com'), const SavedSite('YouTube', 'https://www.youtube.com'), const SavedSite('ويكيبيديا', 'https://ar.wikipedia.org'), ...stars.take(6)];
+    return Positioned.fill(child: Center(child: SingleChildScrollView(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+      const Text('ALJESI', style: TextStyle(fontSize: 15, letterSpacing: 7, color: Colors.white38)),
+      const SizedBox(height: 6),
+      const Text('الجيسي', style: TextStyle(fontSize: 46, fontWeight: FontWeight.bold, color: Colors.white)),
+      const SizedBox(height: 8),
+      const Text('ابحث أو اكتب عنوان الموقع في الأعلى', style: TextStyle(color: Colors.white54, fontSize: 13)),
+      const SizedBox(height: 26),
+      Wrap(alignment: WrapAlignment.center, spacing: 9, runSpacing: 9, children: [for (final q in quick) ActionChip(avatar: const Icon(Icons.language, size: 17, color: wineBright), label: Text(q.title.length > 18 ? '${q.title.substring(0, 18)}…' : q.title), backgroundColor: const Color(0xCC15151B), side: BorderSide(color: wine.withOpacity(.6)), onPressed: () => _go(q.url))]),
+    ]))));
   }
 
   Widget _roundButton(IconData icon, VoidCallback action, {Color color = Colors.white}) => Material(color: const Color(0xE615151B), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: wine.withOpacity(.55))), child: InkWell(borderRadius: BorderRadius.circular(15), onTap: action, child: SizedBox(width: 45, height: 48, child: Icon(icon, color: color, size: 22))));
   Widget _navButton(IconData icon, VoidCallback action, {bool accent = false}) => IconButton(onPressed: action, icon: Icon(icon, color: accent ? wineBright : Colors.white70, size: 23), splashRadius: 23);
-  Future<void> _showTabs() async { final url = currentUrl; await showModalBottomSheet<void>(context: context, backgroundColor: panel, builder: (ctx) => SafeArea(child: Padding(padding: const EdgeInsets.all(22), child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.tab, color: wineBright, size: 30), const SizedBox(height: 10), const Text('علامة التبويب الحالية', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)), const SizedBox(height: 8), Text(pageTitle, maxLines: 1, overflow: TextOverflow.ellipsis), Text(url, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white38, fontSize: 11)), const SizedBox(height: 12), FilledButton.icon(onPressed: () { Navigator.pop(ctx); _go('https://www.google.com'); }, icon: const Icon(Icons.add), label: const Text('صفحة جديدة'))])))); }
+  Future<void> _showTabs() async { final url = currentUrl; await showModalBottomSheet<void>(context: context, backgroundColor: panel, builder: (ctx) => SafeArea(child: Padding(padding: const EdgeInsets.all(22), child: Column(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.tab, color: wineBright, size: 30), const SizedBox(height: 10), const Text('علامة التبويب الحالية', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)), const SizedBox(height: 8), Text(pageTitle, maxLines: 1, overflow: TextOverflow.ellipsis), Text(url, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white38, fontSize: 11)), const SizedBox(height: 12), FilledButton.icon(onPressed: () { Navigator.pop(ctx); _goHome(); }, icon: const Icon(Icons.add), label: const Text('صفحة جديدة'))])))); }
 }
 
 class Starfield extends StatefulWidget { const Starfield({super.key}); @override State<Starfield> createState() => _StarfieldState(); }
@@ -338,11 +363,37 @@ class _StarfieldState extends State<Starfield> with SingleTickerProviderStateMix
   late final AnimationController c = AnimationController(vsync: this, duration: const Duration(seconds: 18))..repeat();
   final stars = List.generate(95, (i) => _Star(Random(i * 17 + 4).nextDouble(), Random(i * 31 + 9).nextDouble(), Random(i * 13 + 2).nextDouble() * 1.5 + .3, Random(i * 23 + 5).nextDouble()));
   @override void dispose() { c.dispose(); super.dispose(); }
-  @override Widget build(BuildContext context) => AnimatedBuilder(animation: c, builder: (_, __) => CustomPaint(painter: StarPainter(stars, c.value), child: const SizedBox.expand()));
+  @override Widget build(BuildContext context) => RepaintBoundary(child: AnimatedBuilder(animation: c, builder: (_, __) => CustomPaint(painter: StarPainter(stars, c.value), child: const SizedBox.expand())));
 }
 class _Star { final double x,y,r,phase; _Star(this.x,this.y,this.r,this.phase); }
 class StarPainter extends CustomPainter {
   final List<_Star> stars; final double t; StarPainter(this.stars,this.t);
-  @override void paint(Canvas canvas, Size size) { final bg = Paint()..shader = const RadialGradient(colors: [Color(0xFF170B15), ink], radius: 1.1).createShader(Offset.zero & size); canvas.drawRect(Offset.zero & size,bg); for(final s in stars){final pulse=(sin((t*2*pi)+s.phase)+1)/2; final p=Paint()..color=Colors.white.withOpacity(.12+pulse*.55); canvas.drawCircle(Offset(s.x*size.width,s.y*size.height),s.r,p);} final meteorX=(t*1.35%1.3)*size.width-size.width*.15; final meteorY=(t*1.35%1.3)*size.height*.48; final m=Paint()..shader=LinearGradient(colors:[Colors.white.withOpacity(0),wineBright,Colors.white],begin:Alignment.centerLeft,end:Alignment.centerRight).createShader(Rect.fromLTWH(meteorX-70,meteorY-25,90,3)); canvas.drawLine(Offset(meteorX-70,meteorY-25),Offset(meteorX,meteorY),m..strokeWidth=1.4); }
+  @override void paint(Canvas canvas, Size size) {
+    final bg = Paint()..shader = const RadialGradient(colors: [Color(0xFF1B0C17), ink], radius: 1.1).createShader(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, bg);
+    for (final s in stars) {
+      final pulse = (sin((t * 2 * pi) + s.phase * 2 * pi) + 1) / 2;
+      canvas.drawCircle(Offset(s.x * size.width, s.y * size.height), s.r, Paint()..color = Colors.white.withOpacity(.15 + pulse * .6));
+    }
+    // 4 shooting stars, each streaks across the screen once per cycle at different times/places
+    const starts = [0.00, 0.27, 0.51, 0.76];
+    const xs = [0.05, 0.45, 0.20, 0.60];
+    const ys = [0.05, 0.12, 0.38, 0.25];
+    for (var k = 0; k < 4; k++) {
+      final local = (t - starts[k]) % 1.0;
+      if (local > 0.12) continue;
+      final u = local / 0.12;
+      final dir = Offset(0.85, 0.53);
+      final head = Offset(xs[k] * size.width, ys[k] * size.height) + dir * (u * size.width * 0.75);
+      final tail = head - dir * 130;
+      final fade = sin(u * pi).clamp(0.0, 1.0);
+      final paint = Paint()
+        ..strokeWidth = 2.2
+        ..strokeCap = StrokeCap.round
+        ..shader = LinearGradient(colors: [Colors.white.withOpacity(0), wineBright.withOpacity(.85 * fade), Colors.white.withOpacity(fade)]).createShader(Rect.fromPoints(tail, head));
+      canvas.drawLine(tail, head, paint);
+      canvas.drawCircle(head, 2.4, Paint()..color = Colors.white.withOpacity(fade));
+    }
+  }
   @override bool shouldRepaint(covariant StarPainter old) => old.t != t;
 }
