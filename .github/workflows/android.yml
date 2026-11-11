@@ -16,8 +16,24 @@ jobs:
           cache: true
       - name: Generate Android platform files
         run: flutter create . --platforms=android
+      - name: Locate Android SDK manager
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager -print -quit 2>/dev/null || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager was not found under: $SDK_ROOT/cmdline-tools"
+            find "$SDK_ROOT" -maxdepth 5 -type f -name sdkmanager -print 2>/dev/null || true
+            exit 1
+          fi
+          echo "Using Android SDK manager: $SDKMANAGER"
+          echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
       - name: Install Android API 36
-        run: yes | sdkmanager --licenses >/dev/null && sdkmanager "platforms;android-36"
+        shell: bash
+        run: |
+          yes 2>/dev/null | "$SDKMANAGER" --licenses >/dev/null
+          "$SDKMANAGER" "platforms;android-36"
       - name: Align all Android modules to compileSdk 36
         shell: bash
         run: |
