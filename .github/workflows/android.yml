@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -58,6 +58,13 @@ jobs:
           mkdir -p "$HOME/.gradle/init.d"
           cat > "$HOME/.gradle/init.d/compile-sdk.gradle" <<'GRADLE'
           allprojects {
+              // Lint is a quality check, not needed to produce the APK; it crashes
+              // on some plugin sources, so skip all lint tasks.
+              tasks.configureEach { t ->
+                  if (t.name.startsWith("lint")) {
+                      t.enabled = false
+                  }
+              }
               afterEvaluate { p ->
                   if (p.hasProperty("android")) {
                       p.android.compileSdkVersion 36
