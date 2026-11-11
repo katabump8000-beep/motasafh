@@ -29,10 +29,20 @@ jobs:
           echo "Using Android SDK manager: $SDKMANAGER"
           echo "SDKMANAGER=$SDKMANAGER" >> "$GITHUB_ENV"
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
-      - name: Install Android API 36
+      - name: Accept Android SDK licenses and install API 36
         shell: bash
         run: |
-          yes 2>/dev/null | "$SDKMANAGER" --licenses >/dev/null
+          # sdkmanager may close stdin after accepting all licenses. With
+          # GitHub Actions' pipefail, the resulting SIGPIPE from `yes` can
+          # incorrectly fail the step even when sdkmanager succeeded.
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses >/dev/null
+          SDKMANAGER_STATUS=${PIPESTATUS[1]}
+          set -o pipefail
+          if [ "$SDKMANAGER_STATUS" -ne 0 ]; then
+            echo "sdkmanager license acceptance failed with exit code $SDKMANAGER_STATUS"
+            exit "$SDKMANAGER_STATUS"
+          fi
           "$SDKMANAGER" "platforms;android-36"
       - name: Align all Android modules to compileSdk 36
         shell: bash
